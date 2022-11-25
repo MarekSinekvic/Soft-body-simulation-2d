@@ -6,7 +6,7 @@ window.onresize = function () {
 	canv.height = window.innerHeight;
 }
 
-var dt = 0.3;
+var dt = 0.2;
 
 var frame = 0;
 var startTime = new Date();
@@ -16,9 +16,11 @@ var rFps = 0;
 
 var Recording = new Record();
 
-var debugGraph = new Graph({ x: 10, y: canv.height - 10 }, 400, 400, 8000, 30);
-debugGraph.data[0] = [];
-debugGraph.data[1] = [];
+var showJoints = false;
+
+var debugGraph = new NewGraph([ 10, canv.height - 400-10], 400, 400, 500, 30);
+debugGraph.data[0] = {name:"Body velocity",color:"red",data:[]};
+debugGraph.data[1] = {name:"Y velocity",color:"rgba(0,255,0,0.3)",data:[]};
 
 var needDrawDebugGraph = true;
 
@@ -63,7 +65,7 @@ class Particle {
 				const startDist = math.magnitude(this.startDeltas[i]);
 				this.startDeltas[i] = { x: this.joints[i].position.x - position.x, y: this.joints[i].position.y - position.y };
 
-				if (Math.abs(math.magnitude(this.startDeltas[i]) - startDist) > 20) {
+				if (Math.abs(math.magnitude(this.startDeltas[i]) - startDist) > 200) {
 					// jointsToDelete.push(i);
 					continue;
 				}
@@ -130,7 +132,8 @@ class Particle {
 			let c = this.joints[i];
 
 			this.spring(c.position, math.magnitude(x));// {x:this.position.x+defLocalPosition.x,y:this.position.y+defLocalPosition.y}
-			// d.line(this.position.x, this.position.y, c.position.x, c.position.y, "red", 0.1);
+			if (showJoints)
+				d.line(this.position.x, this.position.y, c.position.x, c.position.y, "red", 0.1);
 
 			// this.joints[i].velocity.x += (newJointVel.x-this.joints[i].velocity.x)*this.damping;
 			// this.joints[i].velocity.y += (newJointVel.y-this.joints[i].velocity.y)*this.damping;
@@ -262,9 +265,9 @@ class ParticlesGroup {
 			});
 		}
 	}
-	RecreateJoints() {
+	RecreateJoints(Quality =1) {
 		for (let i = 0; i < this.particles.length; i++) {
-			for (let j = 0; j < this.particles.length; j++) {
+			for (let j = 0; j < this.particles.length; j+=Quality) {
 				if (i == j) continue;
 				this.particles[i].joints.push(this.particles[j]);
 			}
@@ -323,6 +326,20 @@ class ParticlesGroup {
 		wall.sourceParticle2 = this.particles[nextI];
 		wall.fixNormalToCircle(this.GetCentere());
 		return wall;
+	}
+	GetAverageDeformationLevel() {
+		let jointsCount = 0;
+		let deform = 0;
+		for (let i = 0; i < this.particles.length; i++) {
+			for (let j = 0; j < this.particles[i].joints.length; j++) {
+				let p1 = this.particles[i].position;
+				let p2 = this.particles[i].joints[j].position;
+				deform += math.magnitude([p2.x-p1.x,p2.y-p1.y])-math.magnitude(this.particles[i].startDeltas[j]);
+				// console.log(this.particles[i].startDeltas[j]);
+			}
+			jointsCount += this.particles[i].joints.length;
+		}
+		return deform/jointsCount;
 	}
 }
 class BodyConstructor {
@@ -403,7 +420,7 @@ class BodyConstructor {
 		console.log(this.newParticles.length * 2);
 		let partsPosesToAdd = [];
 		let centere = this.GetCentere();
-		for (let i = 0; i < this.newParticles.length - 1; i++) {
+		for (let i = 0; i < this.newParticles.length; i++) {
 			let nextI = i + 1;
 			if (nextI > this.newParticles.length - 1) nextI = 0;
 			let pos = {
@@ -458,15 +475,15 @@ for (let i = -wallsCount / 2; i < wallsCount / 2; i += 0) {
 }
 
 
-var groupsCount = 2;
+var groupsCount = 0;
 let r = 40;
-let count = 40;
+let count = 30;
 for (let p = 0; p < groupsCount; p++) {
 	let newParticles = [];
 	for (let i = 0; i < count; i++) {
 		let localPos = { x: 100 + math.cos(360 / count * i) * r, y: math.sin(360 / count * i) * r };
 		let velocity = { x: -math.sin(360 / count * i) * 0, y: math.cos(360 / count * i) * 0 };
-		let particle = new Particle({ x: 450 + localPos.x, y: canv.height / 2 + localPos.y + 100 + p * 90 - 200 }, velocity, 0.18, 0.13, 0.1);
+		let particle = new Particle({ x: 450 + localPos.x, y: canv.height / 2 + localPos.y + 100 + p * 90 - 200 }, velocity, 0.02, 0.18, 0.5);
 		// particle.group
 		newParticles.push(particle);
 		newParticles[newParticles.length - 1].groupIndex = p;
@@ -475,7 +492,7 @@ for (let p = 0; p < groupsCount; p++) {
 	}
 
 	let l = pGroups.push(new ParticlesGroup(newParticles));
-	pGroups[l - 1].RecreateJoints();
+	pGroups[l - 1].RecreateJoints(2);
 }
 // for (let p = 0; p < groupsCount; p++) {
 // 	let newParticles = [];
@@ -613,61 +630,65 @@ setInterval(function () {
 			d.rect(centere.x, centere.y, 2, 2, "red", "Red");
 
 			if (i == 0) {
-				debugGraph.data[0].push(new GraphData((canv.height - centere.y) / debugGraph.height, frame - particles[i].appearFrame, inRgb(255, 0, 0), "Y Position"));
-				debugGraph.data[1].push(new GraphData(math.magnitude(pGroups[i].averageVelocity), frame - particles[i].appearFrame, inRgb(0, 255, 0), "Average velocity"));
+				// debugGraph.data[0].data.push(new GraphData((canv.height - centere.y) / debugGraph.height, frame - particles[i].appearFrame, inRgb(255, 0, 0), "Y Position"));
+				debugGraph.data[0].data.push({x:frame,y:pGroups[i].GetAverageDeformationLevel()});
+				debugGraph.data[1].data.push({x:frame,y:-pGroups[i].averageVelocity.y});
+				// debugGraph.data[1].push(new GraphData(math.magnitude(pGroups[i].averageVelocity), frame - particles[i].appearFrame, inRgb(0, 255, 0), "Average velocity"));
 			}
 		}
-		for (let i = 0; i < particles.length; i++) {
-			let nextI = i + 1;
-			if (nextI > particles.length - 1)
-				nextI = 0;
-			particles[i].recalculateDistances(particles[i].position, true);
-			// particles[i].deformStructure();
-			particles[i].springByDistances();
-		}
-		for (let i = 0; i < particles.length; i++) {
-			if (particles[i].isFreezed) continue;
-			particles[i].position.x += particles[i].velocity.x * dt;
-			particles[i].position.y += particles[i].velocity.y * dt;
+		for (let time = 0; time < 1/dt; time++) {
+			for (let i = 0; i < particles.length; i++) {
+				let nextI = i + 1;
+				if (nextI > particles.length - 1)
+					nextI = 0;
+				// particles[i].recalculateDistances(particles[i].position, true);
+				// particles[i].deformStructure();
+				particles[i].springByDistances();
+			}
+			for (let i = 0; i < particles.length; i++) {
+				if (particles[i].isFreezed) continue;
+				particles[i].position.x += particles[i].velocity.x * dt;
+				particles[i].position.y += particles[i].velocity.y * dt;
 
-			for (let wall = 0; wall < walls.length; wall++) {
-				let interData = particles[i].isIntersectWithWall(walls[wall]);
-				if (interData.isInter) {
-					particles[i].reactOnWall(walls[wall], interData.error);
+				for (let wall = 0; wall < walls.length; wall++) {
+					let interData = particles[i].isIntersectWithWall(walls[wall]);
+					if (interData.isInter) {
+						particles[i].reactOnWall(walls[wall], interData.error);
+					}
+				}
+				for (let g = 0; g < pGroups.length; g++) {
+					if (particles[i].groupIndex == g) continue;
+					let collData = particles[i].IsIntersectWithGroup(pGroups[g]);
+					if (collData.isInter) {
+						particles[i].reactOnDynamicWall(collData.Wall, collData.error);
+					}
+				}
+				// d.txt(particles[i].selfId,particles[i].position.x,particles[i].position.y+3,"","white");
+			}
+			for (let i = 0; i < particles.length; i++) {
+				// particles[i].springByDistances();
+				particles[i].velocity.y += 0.1 * dt;
+				if (particles[i].position.y < 0) {
+					particles[i].velocity.y = -particles[i].velocity.y * 0.8;
+					particles[i].velocity.x *= 0.9;
+					particles[i].position.y = 0;
+				}
+				if (particles[i].position.y > canv.height) {
+					particles[i].velocity.y = -particles[i].velocity.y * 1;
+					particles[i].position.y = canv.height;
+					particles[i].velocity.x *= 1;
+				}
+				if (particles[i].position.x < 0) {
+					particles[i].velocity.x = -particles[i].velocity.x * 0.8;
+					particles[i].position.x = 0;
+				}
+				if (particles[i].position.x > canv.width) {
+					particles[i].velocity.x = -particles[i].velocity.x * 0.8;
+					particles[i].position.x = canv.width;
 				}
 			}
-			for (let g = 0; g < pGroups.length; g++) {
-				if (particles[i].groupIndex == g) continue;
-				let collData = particles[i].IsIntersectWithGroup(pGroups[g]);
-				if (collData.isInter) {
-					particles[i].reactOnDynamicWall(collData.Wall, collData.error);
-				}
-			}
-			// d.txt(particles[i].selfId,particles[i].position.x,particles[i].position.y+3,"","white");
+			drag();
 		}
-		for (let i = 0; i < particles.length; i++) {
-			// particles[i].springByDistances();
-			particles[i].velocity.y += 0.1 * dt;
-			if (particles[i].position.y < 0) {
-				particles[i].velocity.y = -particles[i].velocity.y * 0.8;
-				particles[i].velocity.x *= 0.9;
-				particles[i].position.y = 0;
-			}
-			if (particles[i].position.y > canv.height) {
-				particles[i].velocity.y = -particles[i].velocity.y * 1;
-				particles[i].position.y = canv.height;
-				particles[i].velocity.x *= 1;
-			}
-			if (particles[i].position.x < 0) {
-				particles[i].velocity.x = -particles[i].velocity.x * 0.8;
-				particles[i].position.x = 0;
-			}
-			if (particles[i].position.x > canv.width) {
-				particles[i].velocity.x = -particles[i].velocity.x * 0.8;
-				particles[i].position.x = canv.width;
-			}
-		}
-		drag();
 
 		d.txt(frame + " / " + framesCountToRecord, 1, 16 + 16, "", "white");
 		// Recording.AddData();
@@ -697,6 +718,7 @@ setInterval(function () {
 		walls[wall].draw();
 	}
 	if (needDrawDebugGraph) {
+		debugGraph.viewOffset[0] = debugGraph.LocalToGlobal(-100-debugGraph.data[0].data[debugGraph.data[0].data.length-1].x,0)[0]
 		debugGraph.Draw();
 	}
 	d.txt(Math.round(rFps), 1, 16, "", "white");
