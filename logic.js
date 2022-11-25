@@ -475,7 +475,7 @@ for (let i = -wallsCount / 2; i < wallsCount / 2; i += 0) {
 }
 
 
-var groupsCount = 0;
+var groupsCount = 1;
 let r = 40;
 let count = 30;
 for (let p = 0; p < groupsCount; p++) {
